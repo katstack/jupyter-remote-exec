@@ -66,9 +66,7 @@ venv.bak/
 Thumbs.db
 
 # Project specific - User configuration files
-jupyter_remote_exec.json
 config.toml
 
 # Keep example files
-!config.example.json
 !config.example.toml

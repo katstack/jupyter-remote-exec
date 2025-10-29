@@ -3,7 +3,7 @@ Configuration utilities for jupyter-remote-exec.
 
 Supports multiple sources with the following precedence (highest first):
 1) Programmatic runtime configuration via set_config()
-2) Project/User config files (pyproject.toml [tool.jupyter_remote_exec] or jupyter_remote_exec.json)
+2) Project/User config files (pyproject.toml [tool.jupyter_remote_exec])
 3) Environment variables (JRE_*)
 4) In-file legacy defaults (fallbacks passed by callers if nothing else found)
 
@@ -44,7 +44,6 @@ Utilities:
 """
 from __future__ import annotations
 from typing import Any, Dict, Optional, List
-import json
 import os
 
 # Try to support TOML via stdlib (Python 3.11+); fall back to optional tomli if present.
@@ -89,7 +88,7 @@ def get_config() -> Dict[str, Any]:
     if _RUNTIME_CONFIG is not None:
         return _RUNTIME_CONFIG
 
-    # 2) File-based configuration (pyproject.toml or jupyter_remote_exec.json)
+    # 2) File-based configuration (pyproject.toml)
     file_cfg: Dict[str, Any] = {}
     # pyproject.toml
     pyproject_path = os.path.join(os.getcwd(), "pyproject.toml")
@@ -118,15 +117,7 @@ def get_config() -> Dict[str, Any]:
             except Exception:
                 pass
 
-    # jupyter_remote_exec.json (simple JSON alternative)
-    if not file_cfg:
-        json_path = os.path.join(os.getcwd(), "jupyter_remote_exec.json")
-        if os.path.exists(json_path):
-            try:
-                with open(json_path, "r", encoding="utf-8") as f:
-                    file_cfg = json.load(f)
-            except Exception:
-                file_cfg = {}
+
 
     # 3) Environment variables
     env_cfg: Dict[str, Any] = {}

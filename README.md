@@ -78,21 +78,7 @@ port = 8888
 # token = "per-remote-token"   # 설정 시 공유 토큰보다 우선
 ```
 
-### 2) JSON 파일
-
-루트에 `jupyter_remote_exec.json` 파일을 둘 수도 있습니다.
-
-```json
-{
-  "shared_token": "your_shared_token",
-  "remotes": {
-    "us-east": {"host": "east-server.example.com", "port": 8888, "https": true, "verify": false},
-    "us-west": {"host": "west-server.example.com", "port": 8888}
-  }
-}
-```
-
-### 3) 환경 변수
+### 2) 환경 변수
 
 - `JRE_SHARED_TOKEN`
 - `JRE_DEFAULT_HTTPS` (true/false)
@@ -104,7 +90,7 @@ port = 8888
   - `JRE_REMOTE_<NAME>_VERIFY`
   - `JRE_REMOTE_<NAME>_TOKEN`
 
-### 4) 런타임 코드로 설정
+### 3) 런타임 코드로 설정
 
 ```python
 from config import set_config

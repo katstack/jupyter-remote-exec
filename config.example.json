@@ -1,0 +1,15 @@
+{
+  "shared_token": "your_shared_token",
+  "remotes": {
+    "us-east": {
+      "host": "east-server.example.com",
+      "port": 8888,
+      "https": false
+    },
+    "us-west": {
+      "host": "west-server.example.com",
+      "port": 8888,
+      "token": "per-remote-token"
+    }
+  }
+}

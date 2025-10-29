@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jupyter-remote-exec"
+version = "0.1.0"
+description = "Execute code on remote Jupyter servers"
+authors = [{name = "whya5448"}]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ipython",
+    "websocket-client",
+    "requests",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "black",
+    "mypy",
+    "ruff",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

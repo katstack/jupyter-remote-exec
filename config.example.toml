@@ -1,0 +1,15 @@
+# Example configuration for jupyter-remote-exec
+# Copy this file to your project root as pyproject.toml or jupyter_remote_exec.json
+
+[tool.jupyter_remote_exec]
+shared_token = "your_shared_token"   # Optional: shared token for all remotes
+
+[tool.jupyter_remote_exec.remotes.us-east]
+host = "east-server.example.com"
+port = 8888
+https = false
+# token = "per-remote-token"  # Optional: override shared token
+
+[tool.jupyter_remote_exec.remotes.us-west]
+host = "west-server.example.com"
+port = 8888

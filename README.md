@@ -1,52 +1,133 @@
 # jupyter-remote-exec
 
-분산 컴퓨팅 환경을 위한 IPython 매직 확장입니다. 여러 원격 Jupyter 서버에서 동일한 코드를 실행하거나 특정 리모트에서만 코드를 선택적으로 실행할 수 있습니다.
+이제 라이브러리 API + 선택적 IPython 매직 래퍼 구조입니다. 노트북에서는 `%load_ext`로 편하게 쓰고, 스크립트/테스트/CLI에서는 일반 파이썬 모듈처럼 `jupyter_remote_exec`를 임포트해 사용하세요.
 
 ## 주요 기능
 
-- ✅ 여러 리모트에서 동시에 코드 실행
-- ✅ 특정 리모트 선택 실행
-- ✅ 함수형 프로그래밍 스타일 지원
-- ✅ 자동 커널 관리
-- ✅ WebSocket 기반 원격 실행
+- ✅ 여러 리모트에서 코드 실행 (동시에/선택적으로)
+- ✅ 함수(소스) 전송 후 원격 실행
+- ✅ 설정 파일/환경변수/런타임 구성 지원
+- ✅ 자동 커널 생성 및 캐싱
+- ✅ HTTP(S)/WS(S) 및 인증서 검증 옵션
+
+## 사용 방법 요약
+
+- 라이브러리 API (권장, 어디서나 사용):
+
+```python
+from jupyter_remote_exec import exec_on_remote, get_remotes
+
+def hello():
+    import socket
+    print(f"Hello from {socket.gethostname()}!")
+
+print(get_remotes())
+exec_on_remote(hello)           # 모든 리모트
+exec_on_remote(hello, 'us-east')
+```
+
+- IPython 매직(선택): 노트북에서 편의용 래퍼
+
+```python
+%load_ext jupyter_remote_exec_magic_wrapper
+# 로드되면 아래 두 함수가 전역 네임스페이스에 바인딩됩니다
+# exec_on_remote, get_remotes
+```
 
 ## 설치
 
-### 방법 1: IPython 확장 디렉토리에 복사 (권장)
+### 방법 1: IPython 확장 디렉토리에 복사 (노트북에서 매직 사용 시)
 
 ```bash
 mkdir -p ~/.ipython/extensions
-cp jupyter-remote-exec.py ~/.ipython/extensions/jupyter_remote_exec.py
+cp jupyter_remote_exec_magic_wrapper.py ~/.ipython/extensions/jupyter_remote_exec_magic_wrapper.py
 ```
 
-### 방법 2: 현재 디렉토리에서 사용
+### 방법 2: 현재 디렉토리에서 라이브러리로 사용
 
 ```python
-# Jupyter Notebook에서
-%load_ext jupyter_remote_exec
+from jupyter_remote_exec import exec_on_remote
 ```
 
 ## 설정
 
-`jupyter-remote-exec.py` (또는 복사한 `~/.ipython/extensions/jupyter_remote_exec.py`) 파일을 열어 리모트 정보를 설정하세요:
+설정은 파일/환경변수/런타임 코드로 구성할 수 있습니다. 레거시 상수(`REMOTE_CONFIG`, `SHARED_TOKEN`)는 더 이상 사용하지 않습니다.
+
+### 1) pyproject.toml
+
+프로젝트 루트의 `pyproject.toml`에 다음 섹션을 추가하세요.
+
+```toml
+[tool.jupyter_remote_exec]
+shared_token = "your_shared_token"   # 선택사항
+
+[tool.jupyter_remote_exec.remotes.us-east]
+host = "east-server.example.com"
+port = 8888
+https = true            # 선택사항, 기본 false
+verify = "/path/to/ca.pem"  # true/false 또는 CA 번들 경로
+
+[tool.jupyter_remote_exec.remotes.us-west]
+host = "west-server.example.com"
+port = 8888
+# token = "per-remote-token"   # 설정 시 공유 토큰보다 우선
+```
+
+### 2) JSON 파일
+
+루트에 `jupyter_remote_exec.json` 파일을 둘 수도 있습니다.
+
+```json
+{
+  "shared_token": "your_shared_token",
+  "remotes": {
+    "us-east": {"host": "east-server.example.com", "port": 8888, "https": true, "verify": false},
+    "us-west": {"host": "west-server.example.com", "port": 8888}
+  }
+}
+```
+
+### 3) 환경 변수
+
+- `JRE_SHARED_TOKEN`
+- `JRE_DEFAULT_HTTPS` (true/false)
+- `JRE_DEFAULT_VERIFY` (true/false/경로)
+- 리모트별 오버라이드:
+  - `JRE_REMOTE_<NAME>_HOST`
+  - `JRE_REMOTE_<NAME>_PORT`
+  - `JRE_REMOTE_<NAME>_HTTPS`
+  - `JRE_REMOTE_<NAME>_VERIFY`
+  - `JRE_REMOTE_<NAME>_TOKEN`
+
+### 4) 런타임 코드로 설정
 
 ```python
-REMOTE_CONFIG = {
-    'us-east': {'host': 'east-server.example.com', 'port': 8888},
-    'us-west': {'host': 'west-server.example.com', 'port': 8888},
-    'eu-central': {'host': 'eu-server.example.com', 'port': 8888},
-    'asia-pacific': {'host': 'asia-server.example.com', 'port': 8888},
-}
+from config import set_config
 
-SHARED_TOKEN = 'your_jupyter_token_here'
+set_config({
+  "shared_token": "your_shared_token",
+  "remotes": {
+    "us-east": {"host": "east", "port": 8888, "https": True, "verify": False},
+    "us-west": {"host": "west", "port": 8888, "token": "per-remote-token"}
+  }
+})
 ```
+
+### 토큰 우선순위
+- 리모트별 토큰 (`remotes.<name>.token`)
+- 공유 토큰 (`shared_token`)
+- 미사용 (토큰 없이 접속; 서버가 허용해야 함)
+
+레거시 방식(파일 내부에 상수 `REMOTE_CONFIG`, `SHARED_TOKEN`를 정의)은 더 이상 지원하지 않습니다. 반드시 `config.py` 또는 파일/환경변수/런타임 설정을 사용하세요.
+
+HTTPS/WSS도 지원합니다. 각 리모트에서 `https=true`로 설정하면 REST는 `https://`, WebSocket은 `wss://`로 연결되며 `verify` 값에 따라 인증서 검증 동작을 제어합니다.
 
 ## 빠른 시작
 
 ### 1. 확장 로드
 
 ```python
-%load_ext jupyter_remote_exec
+%load_ext jupyter_remote_exec_magic_wrapper
 ```
 
 ### 2. 첫 번째 실행

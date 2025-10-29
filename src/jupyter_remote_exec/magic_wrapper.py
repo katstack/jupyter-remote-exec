@@ -8,11 +8,11 @@ namespace when loaded via:
 
 Author: whya5448
 Date: 2025-10-29
-Version: 2.0.0
+Version: 0.1.0
 """
 
 from IPython.core.magic import Magics, magics_class
-from jupyter_remote_exec import (
+from .core import (
     get_remotes as api_get_remotes,
     exec_on_remote as api_exec_on_remote,
     shell_on_remote as api_exec_cell_on_remote,

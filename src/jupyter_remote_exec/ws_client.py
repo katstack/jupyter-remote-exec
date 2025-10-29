@@ -9,7 +9,7 @@ import json
 import uuid
 import ssl
 import websocket
-from msg_models import build_execute_request
+from .msg_models import build_execute_request
 
 DEFAULT_WS_TIMEOUT = 30  # seconds
 

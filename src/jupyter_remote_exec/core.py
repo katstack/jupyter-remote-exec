@@ -10,9 +10,9 @@ from __future__ import annotations
 from typing import Iterable, Optional, List, Dict, Any, Callable
 import inspect
 
-from config import get_remotes as cfg_get_remotes, materialize_remote
-from http_client import create_kernel, JupyterHTTPError
-from ws_client import execute_code_over_ws, JupyterWSError
+from .config import get_remotes as cfg_get_remotes, materialize_remote
+from .http_client import create_kernel, JupyterHTTPError
+from .ws_client import execute_code_over_ws, JupyterWSError
 
 # In-memory cache of active kernels, keyed by remote name.
 # Each value: {

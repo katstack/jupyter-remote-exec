@@ -15,23 +15,28 @@
 - 라이브러리 API (권장, 어디서나 사용):
 
 ```python
-from jupyter_remote_exec import exec_on_remote, get_remotes
-
-def hello():
-    import socket
-    print(f"Hello from {socket.gethostname()}!")
+from jupyter_remote_exec import shell_on_remote, get_remotes
 
 print(get_remotes())
-exec_on_remote(hello)           # 모든 리모트
-exec_on_remote(hello, 'us-east')
+
+# 모든 리모트에서 코드 셀 실행
+shell_on_remote("""
+import sys
+print(sys.version)
+""")
+
+# 특정 리모트에서만 실행
+shell_on_remote("""
+print('Hello from us-east')
+""", 'us-east')
 ```
 
 - IPython 매직(선택): 노트북에서 편의용 래퍼
 
-```python
+```ipython
 %load_ext jupyter_remote_exec_magic_wrapper
-# 로드되면 아래 두 함수가 전역 네임스페이스에 바인딩됩니다
-# exec_on_remote, get_remotes
+# 로드되면 아래 함수들이 전역 네임스페이스에 바인딩됩니다
+# exec_on_remote, shell_on_remote, get_remotes
 ```
 
 ## 설치
@@ -46,7 +51,7 @@ cp jupyter_remote_exec_magic_wrapper.py ~/.ipython/extensions/jupyter_remote_exe
 ### 방법 2: 현재 디렉토리에서 라이브러리로 사용
 
 ```python
-from jupyter_remote_exec import exec_on_remote
+from jupyter_remote_exec import shell_on_remote
 ```
 
 ## 설정
@@ -126,37 +131,63 @@ HTTPS/WSS도 지원합니다. 각 리모트에서 `https=true`로 설정하면 R
 
 ### 1. 확장 로드
 
-```python
+```ipython
 %load_ext jupyter_remote_exec_magic_wrapper
 ```
 
 ### 2. 첫 번째 실행
 
 ```python
-def hello():
-    import socket
-    print(f"Hello from {socket.gethostname()}!")
+from jupyter_remote_exec import shell_on_remote
 
-# 모든 리모트에서 실행
-exec_on_remote(hello)
+# 모든 리모트에서 코드 셀 실행
+shell_on_remote("""
+import sys
+print('hello')
+""")
 ```
 
 출력 예시:
 ```
-==================================================
-Remote: us-east
-==================================================
+----- [ us-east ] ----------------------------------------
 Hello from east-server.example.com!
 
-==================================================
-Remote: us-west
-==================================================
+----- [ us-west ] ----------------------------------------
 Hello from west-server.example.com!
-
-...
 ```
 
+참고: 여러 리모트에서 실행하면 기본적으로 각 리모트별 구분선이 자동으로 추가되어 출력됩니다. 구분선은 `separators` 옵션으로 끌 수 있습니다(`separators=False`).
+
 ## 사용법
+
+### 코드 셀 실행
+
+여러 줄의 Python 코드 블록을 그대로 원격 커널에서 실행합니다. 셸의 `!` 슈가 문법은 지원하지 않습니다.
+
+- `exec_cell_on_remote(block, remotes=None)` — 여러 줄 블록을 순서대로 실행
+
+예시
+
+```python
+from jupyter_remote_exec import shell_on_remote
+
+# 1) 간단한 코드 블록
+shell_on_remote("""
+import platform
+print(platform.python_version())
+""")
+
+# 2) 특정 리모트에서만 실행
+shell_on_remote("""
+print('Hello from us-east')
+""", 'us-east')
+
+# 3) 여러 리모트에서 실행
+shell_on_remote("""
+import socket
+print('Hi from', socket.gethostname())
+""", ['us-east', 'us-west'])
+```
 
 ### 기본 사용법
 
@@ -198,24 +229,6 @@ selected_remotes = ['asia-pacific'] if use_asia else ['us-east', 'us-west']
 exec_on_remote(my_task, selected_remotes)
 ```
 
-### 매직 커맨드
-
-#### 리모트 상태 확인
-
-```python
-%remotes
-```
-
-출력 예시:
-```
-Available remotes:
-  🟢 ACTIVE us-east: east-server.example.com:8888 (kernel: c900984c...)
-  🔵 ready us-west: west-server.example.com:8888 (kernel: d19f0a2b...)
-  ⚪ not initialized eu-central: eu-server.example.com:8888
-  ⚪ not initialized asia-pacific: asia-server.example.com:8888
-
-🟢 ACTIVE: LOCAL
-```
 
 ### 실전 예제
 
@@ -302,6 +315,38 @@ exec_on_remote(task, 'us-east')  # 단일 리모트
 exec_on_remote(task, ['us-east', 'us-west'])  # 여러 리모트
 ```
 
+#### `exec_cell_on_remote(code, remotes=None, *, separators=None)`
+
+한 줄 또는 여러 줄의 Python 코드를 지정된 리모트(들)에서 실행합니다.
+
+**Parameters:**
+- `code` (str): 실행할 Python 코드 (단일 라인 또는 블록 모두 가능)
+- `remotes` (str | list | None): 실행할 리모트 지정
+    - `None`: 모든 리모트에서 실행
+    - `'us-east'`: 단일 리모트에서 실행
+    - `['us-east', 'us-west']`: 여러 리모트에서 실행
+- `separators` (bool | None): 리모트별 구분선 출력 여부
+    - `True`: 항상 구분선 출력
+    - `False`: 구분선 미출력
+    - `None`(기본): 여러 리모트 대상일 때만 자동으로 구분선 출력
+
+**Returns:** None (결과는 stdout으로 출력됨)
+
+**Example:**
+```python
+# 1) 단일 라인 코드
+exec_cell_on_remote("print('hello')")
+
+# 2) 멀티라인 블록
+exec_cell_on_remote("""
+import sys
+print(sys.version)
+""")
+
+# 3) 특정 리모트에서 실행 + 구분선 비활성화
+exec_cell_on_remote("print('Hello from us-east')", 'us-east', separators=False)
+```
+
 #### `get_remotes()`
 
 사용 가능한 리모트 목록을 반환합니다.
@@ -316,13 +361,10 @@ print(remotes)  # ['us-east', 'us-west', 'eu-central', 'asia-pacific']
 
 ### 매직 커맨드
 
-#### `%remotes`
+현재 제공되는 매직은 확장 로드만입니다. 아래 명령으로 확장을 로드하면 `exec_on_remote`, `exec_cell_on_remote`, `get_remotes` 세 함수가 노트북 전역 네임스페이스에 바인딩됩니다.
 
-모든 리모트의 상태를 출력합니다. 각 리모트의 연결 상태, 호스트 정보, 커널 ID를 보여줍니다.
-
-**Usage:**
-```python
-%remotes
+```ipython
+%load_ext jupyter_remote_exec_magic_wrapper
 ```
 
 ## 아키텍처
@@ -362,7 +404,7 @@ print(remotes)  # ['us-east', 'us-west', 'eu-central', 'asia-pacific']
 
 ## 제약사항
 
-- 각 리모트의 Jupyter 서버는 동일한 인증 토큰을 사용해야 합니다
+- 인증 토큰은 리모트별 또는 공유 토큰으로 설정할 수 있으며, 토큰 없이 접속하도록 서버가 허용할 수도 있습니다
 - 함수는 `inspect.getsource()`로 추출 가능해야 합니다 (람다 함수는 제한적 지원)
 - 네트워크 지연에 따라 실행 시간이 달라질 수 있습니다
 - 함수 내부에서 사용하는 모듈은 각 리모트에 설치되어 있어야 합니다

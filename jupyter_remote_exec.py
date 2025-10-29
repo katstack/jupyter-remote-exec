@@ -7,7 +7,7 @@ or notebooks without relying on IPython magics. The optional IPython extension
 """
 from __future__ import annotations
 
-from typing import Callable, Iterable, Optional, List, Dict, Any
+from typing import Iterable, Optional, List, Dict, Any, Callable
 import inspect
 
 from config import get_remotes as cfg_get_remotes, materialize_remote
@@ -65,7 +65,58 @@ def _ensure_kernel(remote_name: str) -> bool:
     return True
 
 
-def exec_code_on_remote(code: str, remotes: Optional[Iterable[str]] = None) -> str:
+def _resolve_remote_list(remotes: Optional[Iterable[str]]) -> List[str]:
+    """Normalize the `remotes` argument to a list of names.
+
+    None -> all configured remotes; str -> [str]; iterable -> list(iterable)
+    """
+    if remotes is None:
+        return list(get_remotes())
+    if isinstance(remotes, str):
+        return [remotes]
+    return list(remotes)
+
+
+def _iter_remote_outputs(code: str, remotes: Optional[Iterable[str]] = None):
+    """Yield (remote_name, output_text) for each target remote/local.
+
+    This mirrors `_exec_code_on_remote` logic but keeps outputs per remote.
+    """
+    remote_list = _resolve_remote_list(remotes)
+
+    for remote_name in remote_list:
+        if remote_name == 'local':
+            local_ns: Dict[str, Any] = {}
+            try:
+                exec(code, local_ns, local_ns)
+            except Exception as e:
+                yield remote_name, f"❌ Local execution failed: {e}\n"
+            else:
+                # Local execution prints directly; no captured stdout here.
+                yield remote_name, ''
+            continue
+
+        if remote_name not in get_remotes():
+            yield remote_name, f"❌ Unknown remote: {remote_name}\n"
+            continue
+
+        if not _ensure_kernel(remote_name):
+            # _ensure_kernel already printed a reason; emit empty output for consistency
+            yield remote_name, ''
+            continue
+
+        info = _active_kernels[remote_name]
+        try:
+            out = execute_code_over_ws(
+                info['host'], info['port'], info['kernel_id'], info.get('token'), code,
+                https=bool(info.get('https', False)), verify=info.get('verify')
+            )
+            yield remote_name, out
+        except JupyterWSError as e:
+            yield remote_name, f"❌ Remote execution failed for {remote_name}: {e}\n"
+
+
+def _exec_code_on_remote(code: str, remotes: Optional[Iterable[str]] = None) -> str:
     """Execute arbitrary Python source code on one or more remotes.
 
     Args:
@@ -76,50 +127,78 @@ def exec_code_on_remote(code: str, remotes: Optional[Iterable[str]] = None) -> s
     Returns:
         Concatenated stdout from all remotes in order.
     """
-    if remotes is None:
-        remote_list: List[str] = get_remotes()
-    elif isinstance(remotes, str):
-        remote_list = [remotes]
-    else:
-        remote_list = list(remotes)
-
     outputs: List[str] = []
-    for remote_name in remote_list:
-        if remote_name == 'local':
-            # Execute locally as a convenience: create a minimal namespace.
-            local_ns: Dict[str, Any] = {}
-            try:
-                exec(code, local_ns, local_ns)
-            except Exception as e:
-                outputs.append(f"❌ Local execution failed: {e}\n")
-            continue
-
-        if remote_name not in get_remotes():
-            outputs.append(f"❌ Unknown remote: {remote_name}\n")
-            continue
-
-        if not _ensure_kernel(remote_name):
-            # _ensure_kernel already printed a reason
-            continue
-
-        info = _active_kernels[remote_name]
-        try:
-            out = execute_code_over_ws(
-                info['host'], info['port'], info['kernel_id'], info.get('token'), code,
-                https=bool(info.get('https', False)), verify=info.get('verify')
-            )
-            outputs.append(out)
-        except JupyterWSError as e:
-            outputs.append(f"❌ Remote execution failed for {remote_name}: {e}\n")
-
+    for _remote, out in _iter_remote_outputs(code, remotes):
+        outputs.append(out)
     return ''.join(outputs)
 
 
-def exec_on_remote(func: Callable, remotes: Optional[Iterable[str]] = None) -> str:
+
+
+def exec_on_remote(func: Callable, remotes: Optional[Iterable[str]] = None, *, separators: Optional[bool] = None) -> None:
     """Execute a Python function on the specified remote(s).
 
+    Prints the remote stdout naturally (no quotes, real newlines) and returns None.
     The function's source is sent to the remote and then invoked by name.
+
+    Args:
+        func: Callable to send and execute remotely.
+        remotes: Target remote(s). None means all configured.
+        separators: If True, print a header separator per remote. If False, no
+            separators. If None (default), automatically add separators when
+            targeting multiple remotes.
     """
     source = inspect.getsource(func)
     code = source + f"\n{func.__name__}()"
-    return exec_code_on_remote(code, remotes)
+
+    remote_list = _resolve_remote_list(remotes)
+    auto_sep = (separators if separators is not None else len(remote_list) > 1)
+
+    if not auto_sep:
+        out = _exec_code_on_remote(code, remote_list)
+        if out:
+            print(out, end='')
+        return None
+
+    # With separators: print per-remote with a clear header
+    for remote_name, out in _iter_remote_outputs(code, remote_list):
+        header = f"\n----- [ {remote_name} ] " + "-" * 40
+        print(header)
+        if out:
+            print(out, end='')
+    return None
+
+
+def shell_on_remote(code: str, remotes: Optional[Iterable[str]] = None, *, separators: Optional[bool] = None) -> None:
+    """Execute Python code (single-line or multi-line) on the specified remote(s).
+
+    Args:
+        code: Python source to execute remotely. Can be a single line or a block.
+        remotes: None for all configured remotes; a single remote name; or an
+                 iterable of remote names.
+        separators: If True, print a header separator per remote. If False, no
+            separators. If None (default), automatically add separators when
+            targeting multiple remotes.
+
+    Behavior:
+        - Sends the code as-is to the remote kernel(s) and executes it.
+        - Prints stdout in natural form (no quotes) and returns None.
+    """
+    if not isinstance(code, str):
+        raise TypeError("code must be a string containing Python source code")
+
+    remote_list = _resolve_remote_list(remotes)
+    auto_sep = (separators if separators is not None else len(remote_list) > 1)
+
+    if not auto_sep:
+        out = _exec_code_on_remote(code, remote_list)
+        if out:
+            print(out, end='')
+        return None
+
+    for remote_name, out in _iter_remote_outputs(code, remote_list):
+        header = f"\n----- [ {remote_name} ] " + "-" * 40
+        print(header)
+        if out:
+            print(out, end='')
+    return None

@@ -76,6 +76,14 @@ def execute_code_over_ws(host: str, port: int, kernel_id: str, token: Optional[s
             mtype = result.get('msg_type')
             if mtype == 'stream':
                 outputs.append(result.get('content', {}).get('text', ''))
+            elif mtype == 'execute_result':
+                outputs.append(result.get('content', {}).get('data', ''))
+            elif mtype == 'error':
+                outputs.append(result.get('content', {}).get('ename', ''))
+                outputs.append(result.get('content', {}).get('evalue', ''))
+                tb = result.get('content', {}).get('traceback', [])
+                if tb:
+                    outputs.append('\n'.join(str(line) for line in tb))
             if mtype == 'status' and result.get('content', {}).get('execution_state') == 'idle':
                 break
     except Exception as e:

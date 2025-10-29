@@ -1,11 +1,11 @@
 """
-Jupyter Region Magic Extension
+Jupyter Remote Exec (jupyter-remote-exec) IPython Extension
 
 IPython 매직 확장으로 여러 원격 Jupyter 서버(리전)에서 코드를 실행할 수 있습니다.
 분산 컴퓨팅 환경에서 동일한 코드를 여러 리전에서 동시에 실행하거나 
 특정 리전에서만 실행할 수 있는 기능을 제공합니다.
 
-Author: Claude & User
+Author: whya5448
 Date: 2025-10-29
 """
 
@@ -63,7 +63,7 @@ class RegionMagics(Magics):
         shell.user_ns['exec_on_region'] = lambda f, r=None: self.exec_on_region(f, r)
         shell.user_ns['get_regions'] = lambda: self.get_regions()
         
-        print(f"✅ Region magic loaded. Available regions: {list(REGION_CONFIG.keys())}")
+        print(f"✅ jupyter-remote-exec loaded. Available regions: {list(REGION_CONFIG.keys())}")
 
     # ------------------------------------------------------------------------
     # 공개 API 함수
@@ -346,7 +346,7 @@ def load_ipython_extension(ipython):
     """
     IPython 확장 로드 함수
     
-    %load_ext region_magic 실행 시 자동으로 호출됩니다.
+    %load_ext jupyter_remote_exec 실행 시 자동으로 호출됩니다.
     """
     ipython.register_magics(RegionMagics)
 
@@ -354,7 +354,7 @@ def unload_ipython_extension(ipython):
     """
     IPython 확장 언로드 함수
     
-    %unload_ext region_magic 실행 시 자동으로 호출됩니다.
+    %unload_ext jupyter_remote_exec 실행 시 자동으로 호출됩니다.
     """
     # 전역 네임스페이스에서 함수 제거
     if 'exec_on_region' in ipython.user_ns:

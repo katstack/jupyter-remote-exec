@@ -1,13 +1,13 @@
-# Jupyter Region Magic 사용 예시
+# jupyter-remote-exec 사용 예시
 
-이 노트북은 region_magic 확장의 기본 사용법을 보여줍니다.
+이 노트북은 jupyter-remote-exec 확장의 기본 사용법을 보여줍니다.
 
 ## 설정
 
 먼저 확장을 로드합니다:
 
 ```python
-%load_ext region_magic
+%load_ext jupyter_remote_exec
 ```
 
 ## 예시 1: 기본 사용법

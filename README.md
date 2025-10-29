@@ -1,4 +1,4 @@
-# Jupyter Region Magic
+# jupyter-remote-exec
 
 분산 컴퓨팅 환경을 위한 IPython 매직 확장입니다. 여러 원격 Jupyter 서버(리전)에서 동일한 코드를 실행하거나 특정 리전에서만 코드를 실행할 수 있습니다.
 
@@ -16,19 +16,19 @@
 
 ```bash
 mkdir -p ~/.ipython/extensions
-cp region_magic.py ~/.ipython/extensions/
+cp jupyter-remote-exec.py ~/.ipython/extensions/jupyter_remote_exec.py
 ```
 
 ### 방법 2: 현재 디렉토리에서 사용
 
 ```python
 # Jupyter Notebook에서
-%load_ext region_magic
+%load_ext jupyter_remote_exec
 ```
 
 ## 설정
 
-`region_magic.py` 파일을 열어 리전 정보를 설정하세요:
+`jupyter-remote-exec.py` (또는 복사한 `~/.ipython/extensions/jupyter_remote_exec.py`) 파일을 열어 리전 정보를 설정하세요:
 
 ```python
 REGION_CONFIG = {
@@ -46,7 +46,7 @@ SHARED_TOKEN = 'your_jupyter_token_here'
 ### 1. 확장 로드
 
 ```python
-%load_ext region_magic
+%load_ext jupyter_remote_exec
 ```
 
 ### 2. 기본 사용법

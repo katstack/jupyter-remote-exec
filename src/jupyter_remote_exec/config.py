@@ -3,7 +3,7 @@ Configuration utilities for jupyter-remote-exec.
 
 Supports multiple sources with the following precedence (highest first):
 1) Programmatic runtime configuration via set_config()
-2) Project/User config files (pyproject.toml [tool.jupyter_remote_exec])
+2) User config files (config.toml in current directory or ~/.config/jupyter-remote-exec/config.toml)
 3) Environment variables (JRE_*)
 4) In-file legacy defaults (fallbacks passed by callers if nothing else found)
 
@@ -88,34 +88,30 @@ def get_config() -> Dict[str, Any]:
     if _RUNTIME_CONFIG is not None:
         return _RUNTIME_CONFIG
 
-    # 2) File-based configuration (pyproject.toml)
+    # 2) File-based configuration (config.toml)
     file_cfg: Dict[str, Any] = {}
-    # pyproject.toml
-    pyproject_path = os.path.join(os.getcwd(), "pyproject.toml")
-    if tomllib and os.path.exists(pyproject_path):
-        try:
-            with open(pyproject_path, "rb") as f:
-                data = tomllib.load(f)
-            section = data.get("tool", {}).get("jupyter_remote_exec")
-            if isinstance(section, dict):
-                file_cfg = section
-        except Exception:
-            # ignore malformed files to keep runtime simple
-            pass
-    elif not tomllib and 'PYPROJECT_TOML' in os.environ:
-        # optional: explicit path via env, try tomli if available
-        p = os.environ['PYPROJECT_TOML']
-        parser = tomllib or _tomli
-        if parser and os.path.exists(p):
-            try:
-                mode = "rb" if parser is tomllib else "rb"
-                with open(p, mode) as f:  # type: ignore
-                    data = parser.load(f)  # type: ignore
-                section = data.get("tool", {}).get("jupyter_remote_exec")
-                if isinstance(section, dict):
-                    file_cfg = section
-            except Exception:
-                pass
+
+    # Try config.toml in current directory first, then in ~/.config/jupyter-remote-exec/
+    config_paths = [
+        os.path.join(os.getcwd(), "config.toml"),
+        os.path.expanduser("~/.config/jupyter-remote-exec/config.toml")
+    ]
+
+    # Allow override via environment variable
+    if 'JRE_CONFIG_PATH' in os.environ:
+        config_paths.insert(0, os.environ['JRE_CONFIG_PATH'])
+
+    parser = tomllib or _tomli
+    if parser:
+        for config_path in config_paths:
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, "rb") as f:
+                        file_cfg = parser.load(f)  # type: ignore
+                    break  # Use first found config file
+                except Exception:
+                    # ignore malformed files to keep runtime simple
+                    continue
 
 
 

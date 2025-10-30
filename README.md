@@ -56,30 +56,35 @@ from jupyter_remote_exec import shell_on_remote
 
 ## 설정
 
-설정은 파일/환경변수/런타임 코드로 구성할 수 있습니다. 레거시 상수(`REMOTE_CONFIG`, `SHARED_TOKEN`)는 더 이상 사용하지 않습니다.
+설정은 파일/환경변수/런타임 코드로 구성할 수 있습니다.
 
-### 1) pyproject.toml
+### 1) config.toml
 
-프로젝트 루트의 `pyproject.toml`에 다음 섹션을 추가하세요.
+프로젝트 루트 또는 `~/.config/jupyter-remote-exec/`에 `config.toml` 파일을 생성하세요.
 
 ```toml
-[tool.jupyter_remote_exec]
 shared_token = "your_shared_token"   # 선택사항
 
-[tool.jupyter_remote_exec.remotes.us-east]
+[remotes.us-east]
 host = "east-server.example.com"
 port = 8888
 https = true            # 선택사항, 기본 false
 verify = "/path/to/ca.pem"  # true/false 또는 CA 번들 경로
 
-[tool.jupyter_remote_exec.remotes.us-west]
+[remotes.us-west]
 host = "west-server.example.com"
 port = 8888
 # token = "per-remote-token"   # 설정 시 공유 토큰보다 우선
 ```
 
+**설정 파일 경로 우선순위:**
+1. `JRE_CONFIG_PATH` 환경변수로 지정한 경로
+2. `./config.toml` (현재 디렉토리)
+3. `~/.config/jupyter-remote-exec/config.toml` (사용자 홈)
+
 ### 2) 환경 변수
 
+- `JRE_CONFIG_PATH` - config.toml 경로 지정
 - `JRE_SHARED_TOKEN`
 - `JRE_DEFAULT_HTTPS` (true/false)
 - `JRE_DEFAULT_VERIFY` (true/false/경로)
@@ -104,12 +109,17 @@ set_config({
 })
 ```
 
-### 토큰 우선순위
+### 설정 우선순위
+
+**전체 설정 소스 우선순위 (높은 순서):**
+1. 런타임 코드 (`set_config()`)
+2. 환경 변수 (`JRE_*`)
+3. 설정 파일 (`config.toml`)
+
+**토큰 우선순위:**
 - 리모트별 토큰 (`remotes.<name>.token`)
 - 공유 토큰 (`shared_token`)
 - 미사용 (토큰 없이 접속; 서버가 허용해야 함)
-
-레거시 방식(파일 내부에 상수 `REMOTE_CONFIG`, `SHARED_TOKEN`를 정의)은 더 이상 지원하지 않습니다. 반드시 `config.py` 또는 파일/환경변수/런타임 설정을 사용하세요.
 
 HTTPS/WSS도 지원합니다. 각 리모트에서 `https=true`로 설정하면 REST는 `https://`, WebSocket은 `wss://`로 연결되며 `verify` 값에 따라 인증서 검증 동작을 제어합니다.
 

@@ -4,12 +4,13 @@ WebSocket client utilities for interacting with Jupyter kernel channels.
 This module encapsulates the low-level websocket connection and message flow for
 sending an 'execute_request' and collecting textual stdout output.
 """
-from typing import Optional, List, Union
+from typing import Optional, Union, TextIO
+import sys
 import json
 import uuid
 import ssl
 import websocket
-from .msg_models import build_execute_request
+from .msg_models import build_execute_request, build_interrupt_request
 
 DEFAULT_WS_TIMEOUT = 30  # seconds
 
@@ -20,20 +21,30 @@ class JupyterWSError(Exception):
 def execute_code_over_ws(host: str, port: int, kernel_id: str, token: Optional[str], code: str,
                           timeout: Optional[float] = None,
                           https: bool = False,
-                          verify: Optional[Union[bool, str]] = None) -> str:
+                          verify: Optional[Union[bool, str]] = None,
+                          file=sys.stdout) -> None:
     """
     Connect to Jupyter kernel channels via WebSocket, send execute_request, and
-    return concatenated stdout text output.
+    write output to file stream.
 
     Args:
-        host, port, kernel_id: connection targets
+        host: Jupyter server host
+        port: Jupyter server port
+        kernel_id: Kernel ID to connect to
         token: auth token; if None, connects without token (only if server allows)
+        code: Python code to execute
         timeout: socket timeout in seconds
         https: if True, use wss:// (TLS) instead of ws://
         verify: TLS verification behavior (only used when https=True)
             - True: default system CA verification
             - False: disable certificate verification (dev only)
             - str: path to CA bundle file
+        file: Output stream to write results to (default: sys.stdout)
+            - sys.stdout: write to stdout (real-time output)
+            - file-like object: write to that stream (e.g., io.StringIO() to collect)
+
+    Returns:
+        None
     """
     scheme = "wss" if https else "ws"
     token_q = f"?token={token}" if token else ""
@@ -64,7 +75,6 @@ def execute_code_over_ws(host: str, port: int, kernel_id: str, token: Optional[s
 
     msg = build_execute_request(code=code, session_id=session_id, msg_id=msg_id, username='remote', version='5.3')
 
-    outputs: List[str] = []
     try:
         ws.send(json.dumps(msg))
         while True:
@@ -74,18 +84,38 @@ def execute_code_over_ws(host: str, port: int, kernel_id: str, token: Optional[s
             if parent_msg_id != msg_id:
                 continue
             mtype = result.get('msg_type')
+
+            # Collect output text
+            text = ''
             if mtype == 'stream':
-                outputs.append(result.get('content', {}).get('text', ''))
+                text = result.get('content', {}).get('text', '')
             elif mtype == 'execute_result':
-                outputs.append(result.get('content', {}).get('data', ''))
+                text = result.get('content', {}).get('data', '')
             elif mtype == 'error':
-                outputs.append(result.get('content', {}).get('ename', ''))
-                outputs.append(result.get('content', {}).get('evalue', ''))
+                ename = result.get('content', {}).get('ename', '')
+                evalue = result.get('content', {}).get('evalue', '')
                 tb = result.get('content', {}).get('traceback', [])
+                parts = [ename, evalue]
                 if tb:
-                    outputs.append('\n'.join(str(line) for line in tb))
+                    parts.append('\n'.join(str(line) for line in tb))
+                text = ''.join(parts)
+
+            # Write to output stream
+            if text:
+                file.write(text)
+                file.flush()
+
             if mtype == 'status' and result.get('content', {}).get('execution_state') == 'idle':
                 break
+    except KeyboardInterrupt:
+        # Send interrupt request to remote kernel
+        interrupt_msg_id = str(uuid.uuid4())
+        interrupt_msg = build_interrupt_request(session_id=session_id, msg_id=interrupt_msg_id, username='remote', version='5.3')
+        try:
+            ws.send(json.dumps(interrupt_msg))
+        except Exception:
+            pass  # Best effort to send interrupt
+        raise
     except Exception as e:
         raise JupyterWSError(f"WS communication error: {e}") from e
     finally:
@@ -93,5 +123,3 @@ def execute_code_over_ws(host: str, port: int, kernel_id: str, token: Optional[s
             ws.close()
         except Exception:
             pass
-
-    return ''.join(outputs)

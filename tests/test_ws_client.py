@@ -2,6 +2,7 @@
 import pytest
 import json
 import ssl
+from io import StringIO
 from unittest.mock import Mock, patch, MagicMock
 from jupyter_remote_exec.ws_client import execute_code_over_ws, JupyterWSError, DEFAULT_WS_TIMEOUT
 
@@ -31,9 +32,11 @@ class TestExecuteCodeOverWS:
         ])
         mock_create_connection.return_value = mock_ws
 
-        result = execute_code_over_ws("localhost", 8888, "kernel-123", "token", "print('Hello World')")
+        # Test in collect mode using StringIO
+        buffer = StringIO()
+        execute_code_over_ws("localhost", 8888, "kernel-123", "token", "print('Hello World')", file=buffer)
 
-        assert 'Hello World\n' in result
+        assert 'Hello World\n' in buffer.getvalue()
         mock_create_connection.assert_called_once()
         mock_ws.send.assert_called_once()
         mock_ws.close.assert_called_once()
@@ -53,7 +56,9 @@ class TestExecuteCodeOverWS:
         ])
         mock_create_connection.return_value = mock_ws
 
-        result = execute_code_over_ws("localhost", 8888, "kernel-123", "token", "code")
+        buffer = StringIO()
+        execute_code_over_ws("localhost", 8888, "kernel-123", "token", "code", file=buffer)
+        result = buffer.getvalue()
 
         assert 'Line 1\n' in result
         assert 'Line 2\n' in result
@@ -76,7 +81,9 @@ class TestExecuteCodeOverWS:
         ])
         mock_create_connection.return_value = mock_ws
 
-        result = execute_code_over_ws("localhost", 8888, "kernel-123", "token", "print(x)")
+        buffer = StringIO()
+        execute_code_over_ws("localhost", 8888, "kernel-123", "token", "print(x)", file=buffer)
+        result = buffer.getvalue()
 
         assert 'NameError' in result
         assert 'not defined' in result
@@ -166,7 +173,8 @@ class TestExecuteCodeOverWS:
         ])
         mock_create_connection.return_value = mock_ws
 
-        execute_code_over_ws("localhost", 8888, "kernel-123", "token", "code")
+        buffer = StringIO()
+        execute_code_over_ws("localhost", 8888, "kernel-123", "token", "code", file=buffer)
 
         call_kwargs = mock_create_connection.call_args[1]
         assert call_kwargs['timeout'] == DEFAULT_WS_TIMEOUT
@@ -215,8 +223,9 @@ class TestExecuteCodeOverWS:
     def test_ws_connection_error(self, mock_create_connection):
         mock_create_connection.side_effect = Exception("Connection failed")
 
+        buffer = StringIO()
         with pytest.raises(JupyterWSError) as exc_info:
-            execute_code_over_ws("localhost", 8888, "kernel-123", "token", "code")
+            execute_code_over_ws("localhost", 8888, "kernel-123", "token", "code", file=buffer)
 
         assert "Failed to connect WS" in str(exc_info.value)
 
@@ -226,8 +235,9 @@ class TestExecuteCodeOverWS:
         mock_ws.recv.side_effect = Exception("Communication error")
         mock_create_connection.return_value = mock_ws
 
+        buffer = StringIO()
         with pytest.raises(JupyterWSError) as exc_info:
-            execute_code_over_ws("localhost", 8888, "kernel-123", "token", "code")
+            execute_code_over_ws("localhost", 8888, "kernel-123", "token", "code", file=buffer)
 
         assert "WS communication error" in str(exc_info.value)
         mock_ws.close.assert_called_once()
@@ -247,7 +257,9 @@ class TestExecuteCodeOverWS:
         ])
         mock_create_connection.return_value = mock_ws
 
-        result = execute_code_over_ws("localhost", 8888, "kernel-123", "token", "code")
+        buffer = StringIO()
+        execute_code_over_ws("localhost", 8888, "kernel-123", "token", "code", file=buffer)
+        result = buffer.getvalue()
 
         # The result should not contain the ignored message
         assert 'Should be ignored' not in result
@@ -261,8 +273,88 @@ class TestExecuteCodeOverWS:
         mock_ws.close.side_effect = Exception("Error during close")  # Even if close fails
         mock_create_connection.return_value = mock_ws
 
+        buffer = StringIO()
         with pytest.raises(JupyterWSError):
-            execute_code_over_ws("localhost", 8888, "kernel-123", "token", "code")
+            execute_code_over_ws("localhost", 8888, "kernel-123", "token", "code", file=buffer)
 
         # close should be attempted even if it raises
+        mock_ws.close.assert_called_once()
+
+    @patch('jupyter_remote_exec.ws_client.websocket.create_connection')
+    @patch('jupyter_remote_exec.ws_client.uuid.uuid4')
+    def test_keyboard_interrupt_sends_interrupt_request(self, mock_uuid, mock_create_connection):
+        """Test that KeyboardInterrupt sends interrupt_request to remote kernel."""
+        # Use fixed UUIDs for testing
+        mock_uuid.side_effect = ['session-id', 'msg-id', 'interrupt-msg-id']
+
+        mock_ws = Mock()
+        # Simulate KeyboardInterrupt during recv
+        mock_ws.recv.side_effect = KeyboardInterrupt("User interrupted")
+        mock_create_connection.return_value = mock_ws
+
+        buffer = StringIO()
+        with pytest.raises(KeyboardInterrupt):
+            execute_code_over_ws("localhost", 8888, "kernel-123", "token", "code", file=buffer)
+
+        # Verify that send was called twice: once for execute_request, once for interrupt_request
+        assert mock_ws.send.call_count == 2
+
+        # Check the second call was an interrupt_request
+        second_call_arg = mock_ws.send.call_args_list[1][0][0]
+        interrupt_msg = json.loads(second_call_arg)
+        assert interrupt_msg['header']['msg_type'] == 'interrupt_request'
+        assert interrupt_msg['header']['session'] == 'session-id'
+        assert interrupt_msg['header']['msg_id'] == 'interrupt-msg-id'
+        assert interrupt_msg['content'] == {}
+
+        # Verify close was called
+        mock_ws.close.assert_called_once()
+
+    @patch('jupyter_remote_exec.ws_client.websocket.create_connection')
+    @patch('jupyter_remote_exec.ws_client.uuid.uuid4')
+    def test_keyboard_interrupt_during_execution(self, mock_uuid, mock_create_connection):
+        """Test KeyboardInterrupt during code execution (after receiving some output)."""
+        mock_uuid.side_effect = ['session-id', 'msg-id', 'interrupt-msg-id']
+        msg_id = "msg-id"
+
+        mock_ws = Mock()
+        # Send some output, then raise KeyboardInterrupt
+        mock_ws.recv = Mock(side_effect=[
+            self._create_mock_message(msg_id, 'stream', {'text': 'Started execution\n'}),
+            KeyboardInterrupt("User interrupted")
+        ])
+        mock_create_connection.return_value = mock_ws
+
+        buffer = StringIO()
+        with pytest.raises(KeyboardInterrupt):
+            execute_code_over_ws("localhost", 8888, "kernel-123", "token", "code", file=buffer)
+
+        # Verify we got some output before interrupt
+        assert 'Started execution\n' in buffer.getvalue()
+
+        # Verify interrupt_request was sent
+        assert mock_ws.send.call_count == 2
+        second_call_arg = mock_ws.send.call_args_list[1][0][0]
+        interrupt_msg = json.loads(second_call_arg)
+        assert interrupt_msg['header']['msg_type'] == 'interrupt_request'
+
+    @patch('jupyter_remote_exec.ws_client.websocket.create_connection')
+    @patch('jupyter_remote_exec.ws_client.uuid.uuid4')
+    def test_keyboard_interrupt_send_failure(self, mock_uuid, mock_create_connection):
+        """Test that KeyboardInterrupt is still raised even if interrupt_request send fails."""
+        mock_uuid.side_effect = ['session-id', 'msg-id', 'interrupt-msg-id']
+
+        mock_ws = Mock()
+        mock_ws.recv.side_effect = KeyboardInterrupt("User interrupted")
+        # Make the second send (interrupt_request) fail
+        mock_ws.send.side_effect = [None, Exception("Send failed")]
+        mock_create_connection.return_value = mock_ws
+
+        buffer = StringIO()
+        # KeyboardInterrupt should still be raised even if interrupt send fails
+        with pytest.raises(KeyboardInterrupt):
+            execute_code_over_ws("localhost", 8888, "kernel-123", "token", "code", file=buffer)
+
+        # Verify send was attempted twice
+        assert mock_ws.send.call_count == 2
         mock_ws.close.assert_called_once()

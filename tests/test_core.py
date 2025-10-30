@@ -132,7 +132,14 @@ class TestExecOnRemote:
                                            mock_ensure, clean_active_kernels, capsys):
         mock_get_remotes.return_value = ['dev']
         mock_ensure.return_value = True
-        mock_execute.return_value = 'Hello from remote\n'
+
+        # Mock execute_code_over_ws to write to the file parameter
+        def write_to_file(*args, **kwargs):
+            file = kwargs.get('file', None)
+            if file:
+                file.write('Hello from remote\n')
+                file.flush()
+        mock_execute.side_effect = write_to_file
 
         _active_kernels['dev'] = {
             'host': 'localhost',
@@ -158,7 +165,14 @@ class TestExecOnRemote:
                                           mock_ensure, clean_active_kernels, capsys):
         mock_get_remotes.return_value = ['dev', 'prod']
         mock_ensure.return_value = True
-        mock_execute.return_value = 'output\n'
+
+        # Mock execute_code_over_ws to write to the file parameter
+        def write_to_file(*args, **kwargs):
+            file = kwargs.get('file', None)
+            if file:
+                file.write('output\n')
+                file.flush()
+        mock_execute.side_effect = write_to_file
 
         for remote in ['dev', 'prod']:
             _active_kernels[remote] = {
@@ -186,7 +200,14 @@ class TestExecOnRemote:
                                                mock_ensure, clean_active_kernels, capsys):
         mock_get_remotes.return_value = ['dev']
         mock_ensure.return_value = True
-        mock_execute.return_value = 'output\n'
+
+        # Mock execute_code_over_ws to write to the file parameter
+        def write_to_file(*args, **kwargs):
+            file = kwargs.get('file', None)
+            if file:
+                file.write('output\n')
+                file.flush()
+        mock_execute.side_effect = write_to_file
 
         _active_kernels['dev'] = {
             'host': 'localhost',
@@ -206,24 +227,6 @@ class TestExecOnRemote:
         assert '-----' not in captured.out
         assert 'output' in captured.out
 
-    @patch('jupyter_remote_exec.core.get_remotes')
-    def test_exec_on_remote_local_execution(self, mock_get_remotes, clean_active_kernels, capsys):
-        # For local execution, we need to use shell_on_remote or mock the exec behavior
-        # Since exec_on_remote requires inspect.getsource which doesn't work well with
-        # nested test functions, we'll test the local execution path via _iter_remote_outputs
-        from jupyter_remote_exec.core import _iter_remote_outputs
-
-        mock_get_remotes.return_value = ['local']
-
-        # Test local execution with simple code
-        outputs = list(_iter_remote_outputs("print('Local output')", remotes='local'))
-
-        # Check that local was executed (returns empty string but prints directly)
-        assert len(outputs) == 1
-        assert outputs[0][0] == 'local'
-        # The output is empty because local exec prints directly
-        captured = capsys.readouterr()
-        assert 'Local output' in captured.out
 
 
 class TestShellOnRemote:
@@ -236,7 +239,14 @@ class TestShellOnRemote:
                                         mock_ensure, clean_active_kernels, capsys):
         mock_get_remotes.return_value = ['dev']
         mock_ensure.return_value = True
-        mock_execute.return_value = '42\n'
+
+        # Mock execute_code_over_ws to write to the file parameter
+        def write_to_file(*args, **kwargs):
+            file = kwargs.get('file', None)
+            if file:
+                file.write('42\n')
+                file.flush()
+        mock_execute.side_effect = write_to_file
 
         _active_kernels['dev'] = {
             'host': 'localhost',
@@ -259,7 +269,14 @@ class TestShellOnRemote:
                                            mock_ensure, clean_active_kernels, capsys):
         mock_get_remotes.return_value = ['dev']
         mock_ensure.return_value = True
-        mock_execute.return_value = '3\n'
+
+        # Mock execute_code_over_ws to write to the file parameter
+        def write_to_file(*args, **kwargs):
+            file = kwargs.get('file', None)
+            if file:
+                file.write('3\n')
+                file.flush()
+        mock_execute.side_effect = write_to_file
 
         _active_kernels['dev'] = {
             'host': 'localhost',
@@ -293,7 +310,14 @@ print(x + y)
                                             mock_ensure, clean_active_kernels, capsys):
         mock_get_remotes.return_value = ['dev', 'prod']
         mock_ensure.return_value = True
-        mock_execute.return_value = 'output\n'
+
+        # Mock execute_code_over_ws to write to the file parameter
+        def write_to_file(*args, **kwargs):
+            file = kwargs.get('file', None)
+            if file:
+                file.write('output\n')
+                file.flush()
+        mock_execute.side_effect = write_to_file
 
         for remote in ['dev', 'prod']:
             _active_kernels[remote] = {
@@ -318,7 +342,14 @@ print(x + y)
                                                       mock_ensure, clean_active_kernels, capsys):
         mock_get_remotes.return_value = ['dev', 'prod']
         mock_ensure.return_value = True
-        mock_execute.return_value = 'output\n'
+
+        # Mock execute_code_over_ws to write to the file parameter
+        def write_to_file(*args, **kwargs):
+            file = kwargs.get('file', None)
+            if file:
+                file.write('output\n')
+                file.flush()
+        mock_execute.side_effect = write_to_file
 
         for remote in ['dev', 'prod']:
             _active_kernels[remote] = {
@@ -359,33 +390,3 @@ print(x + y)
         # Should not raise, just return without output
 
 
-class TestIterRemoteOutputs:
-    """Test the _iter_remote_outputs helper."""
-
-    @patch('jupyter_remote_exec.core._ensure_kernel')
-    @patch('jupyter_remote_exec.core.execute_code_over_ws')
-    @patch('jupyter_remote_exec.core.get_remotes')
-    def test_iter_remote_outputs_multiple_remotes(self, mock_get_remotes, mock_execute,
-                                                  mock_ensure, clean_active_kernels):
-        from jupyter_remote_exec.core import _iter_remote_outputs
-
-        mock_get_remotes.return_value = ['dev', 'prod']
-        mock_ensure.return_value = True
-        mock_execute.side_effect = ['output from dev\n', 'output from prod\n']
-
-        for remote in ['dev', 'prod']:
-            _active_kernels[remote] = {
-                'host': 'localhost',
-                'port': 8888,
-                'https': False,
-                'verify': None,
-                'token': 'token',
-                'kernel_id': f'kernel-{remote}'
-            }
-
-        outputs = list(_iter_remote_outputs("print('test')", remotes=['dev', 'prod']))
-
-        assert len(outputs) == 2
-        assert outputs[0][0] == 'dev'
-        assert outputs[1][0] == 'prod'
-        assert 'dev' in outputs[0][1] or outputs[0][1] == 'output from dev\n'

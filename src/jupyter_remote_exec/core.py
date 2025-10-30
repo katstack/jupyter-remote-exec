@@ -7,7 +7,8 @@ or notebooks without relying on IPython magics. The optional IPython extension
 """
 from __future__ import annotations
 
-from typing import Iterable, Optional, List, Dict, Any, Callable
+from typing import Iterable, Optional, List, Dict, Any, Callable, TextIO
+import sys
 import inspect
 
 from .config import get_remotes as cfg_get_remotes, materialize_remote
@@ -77,68 +78,51 @@ def _resolve_remote_list(remotes: Optional[Iterable[str]]) -> List[str]:
     return list(remotes)
 
 
-def _iter_remote_outputs(code: str, remotes: Optional[Iterable[str]] = None):
-    """Yield (remote_name, output_text) for each target remote/local.
+def _exec_on_remotes(code: str, remotes: Optional[Iterable[str]] = None, file=sys.stdout, with_header: bool = False):
+    """Execute code on target remotes and write output to file.
 
-    This mirrors `_exec_code_on_remote` logic but keeps outputs per remote.
+    Args:
+        code: Python code to execute
+        remotes: Target remotes
+        file: Output stream for writing output (default: sys.stdout)
+        with_header: If True, print separator header before each remote execution
     """
     remote_list = _resolve_remote_list(remotes)
 
     for remote_name in remote_list:
-        if remote_name == 'local':
-            local_ns: Dict[str, Any] = {}
-            try:
-                exec(code, local_ns, local_ns)
-            except Exception as e:
-                yield remote_name, f"❌ Local execution failed: {e}\n"
-            else:
-                # Local execution prints directly; no captured stdout here.
-                yield remote_name, ''
-            continue
+        # Print header before execution if requested
+        if with_header:
+            header = f"\n----- [ {remote_name} ] " + "-" * 40
+            file.write(header + "\n")
+            file.flush()
 
         if remote_name not in get_remotes():
-            yield remote_name, f"❌ Unknown remote: {remote_name}\n"
+            error_msg = f"❌ Unknown remote: {remote_name}\n"
+            file.write(error_msg)
+            file.flush()
             continue
 
         if not _ensure_kernel(remote_name):
-            # _ensure_kernel already printed a reason; emit empty output for consistency
-            yield remote_name, ''
+            # _ensure_kernel already printed a reason
             continue
 
         info = _active_kernels[remote_name]
         try:
-            out = execute_code_over_ws(
+            execute_code_over_ws(
                 info['host'], info['port'], info['kernel_id'], info.get('token'), code,
-                https=bool(info.get('https', False)), verify=info.get('verify')
+                https=bool(info.get('https', False)), verify=info.get('verify'),
+                file=file
             )
-            yield remote_name, out
         except JupyterWSError as e:
-            yield remote_name, f"❌ Remote execution failed for {remote_name}: {e}\n"
-
-
-def _exec_code_on_remote(code: str, remotes: Optional[Iterable[str]] = None) -> str:
-    """Execute arbitrary Python source code on one or more remotes.
-
-    Args:
-        code: Python source to run on the target remotes.
-        remotes: None for all configured remotes; a remote name (str); or an
-                 iterable of remote names.
-
-    Returns:
-        Concatenated stdout from all remotes in order.
-    """
-    outputs: List[str] = []
-    for _remote, out in _iter_remote_outputs(code, remotes):
-        outputs.append(out)
-    return ''.join(outputs)
-
-
+            error_msg = f"❌ Remote execution failed for {remote_name}: {e}\n"
+            file.write(error_msg)
+            file.flush()
 
 
 def exec_on_remote(func: Callable, remotes: Optional[Iterable[str]] = None, *, separators: Optional[bool] = None) -> None:
     """Execute a Python function on the specified remote(s).
 
-    Prints the remote stdout naturally (no quotes, real newlines) and returns None.
+    Prints the remote stdout naturally (no quotes, real newlines) in real-time and returns None.
     The function's source is sent to the remote and then invoked by name.
 
     Args:
@@ -154,19 +138,7 @@ def exec_on_remote(func: Callable, remotes: Optional[Iterable[str]] = None, *, s
     remote_list = _resolve_remote_list(remotes)
     auto_sep = (separators if separators is not None else len(remote_list) > 1)
 
-    if not auto_sep:
-        out = _exec_code_on_remote(code, remote_list)
-        if out:
-            print(out, end='')
-        return None
-
-    # With separators: print per-remote with a clear header
-    for remote_name, out in _iter_remote_outputs(code, remote_list):
-        header = f"\n----- [ {remote_name} ] " + "-" * 40
-        print(header)
-        if out:
-            print(out, end='')
-    return None
+    _exec_on_remotes(code, remote_list, with_header=auto_sep)
 
 
 def shell_on_remote(code: str, remotes: Optional[Iterable[str]] = None, *, separators: Optional[bool] = None) -> None:
@@ -182,7 +154,7 @@ def shell_on_remote(code: str, remotes: Optional[Iterable[str]] = None, *, separ
 
     Behavior:
         - Sends the code as-is to the remote kernel(s) and executes it.
-        - Prints stdout in natural form (no quotes) and returns None.
+        - Prints stdout in natural form (no quotes) in real-time and returns None.
     """
     if not isinstance(code, str):
         raise TypeError("code must be a string containing Python source code")
@@ -190,15 +162,4 @@ def shell_on_remote(code: str, remotes: Optional[Iterable[str]] = None, *, separ
     remote_list = _resolve_remote_list(remotes)
     auto_sep = (separators if separators is not None else len(remote_list) > 1)
 
-    if not auto_sep:
-        out = _exec_code_on_remote(code, remote_list)
-        if out:
-            print(out, end='')
-        return None
-
-    for remote_name, out in _iter_remote_outputs(code, remote_list):
-        header = f"\n----- [ {remote_name} ] " + "-" * 40
-        print(header)
-        if out:
-            print(out, end='')
-    return None
+    _exec_on_remotes(code, remote_list, with_header=auto_sep)

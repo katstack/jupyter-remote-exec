@@ -35,3 +35,26 @@ def build_execute_request(code: str, session_id: str, msg_id: str,
             'allow_stdin': False
         }
     }
+
+
+def build_interrupt_request(session_id: str, msg_id: str,
+                            username: str = 'remote', version: str = '5.3') -> Dict[str, Any]:
+    """
+    Build a Jupyter messaging protocol 'interrupt_request' message payload.
+
+    This sends a kernel interrupt signal to stop the currently executing code.
+    """
+    return {
+        'channel': 'shell',
+        'header': {
+            'msg_id': msg_id,
+            'msg_type': 'interrupt_request',
+            'session': session_id,
+            'username': username,
+            'version': version,
+            'date': ''
+        },
+        'parent_header': {},
+        'metadata': {},
+        'content': {}
+    }
